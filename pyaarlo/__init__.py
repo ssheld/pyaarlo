@@ -15,6 +15,7 @@ from .constant import (
     BLANK_IMAGE,
     DEVICES_PATH,
     FAST_REFRESH_INTERVAL,
+    FEED_METADATA_PATH_FORMAT,
     MODEL_ESSENTIAL_SPOTLIGHT,
     MODEL_ESSENTIAL_XL_SPOTLIGHT,
     MODEL_ESSENTIAL_INDOOR,
@@ -722,6 +723,118 @@ class PyArlo(object):
         if device is None:
             device = self.lookup_light_by_id(device_id)
         return device
+
+    def feed_metadata(
+        self,
+        owner_id,
+        location_id,
+        from_date,
+        limit=200,
+        group_by="events",
+        next_page=None,
+        asc=False,
+    ):
+        """Return one Arlo Feed metadata page for a location.
+
+        :param owner_id: Owner/user id for the Arlo location.
+        :type owner_id: str
+        :param location_id: Arlo location id.
+        :type location_id: str
+        :param from_date: Starting date in YYYYMMDD format.
+        :type from_date: str
+        :param limit: Maximum number of Feed metadata groups to request.
+        :type limit: int
+        :param group_by: Feed grouping requested from Arlo.
+        :type group_by: str
+        :param next_page: Cursor from a previous response's `nextPage`.
+        :type next_page: str
+        :param asc: If `True`, request oldest-first ordering.
+        :type asc: bool
+        :return: Unwrapped Feed metadata response for one page.
+        :rtype: dict
+
+        Event Caption data, when present, is preserved in the raw response under
+        the Feed item's `harlem` field.
+        """
+        return self.be.post(
+            FEED_METADATA_PATH_FORMAT.format(owner_id, location_id),
+            {
+                "asc": asc,
+                "fromDate": from_date,
+                "limit": limit,
+                "groupBy": group_by,
+                "nextPage": next_page,
+            },
+        )
+
+    def _feed_items_from_metadata(self, metadata):
+        """Return Feed item dictionaries from a Feed metadata response."""
+        if not isinstance(metadata, dict):
+            return []
+
+        items = []
+        group_by_events = metadata.get("groupByEvents", {})
+        if not isinstance(group_by_events, dict):
+            return items
+
+        for event_groups in group_by_events.values():
+            if not isinstance(event_groups, list):
+                continue
+            for event_group in event_groups:
+                if not isinstance(event_group, dict):
+                    continue
+                for device_events in event_group.values():
+                    if not isinstance(device_events, list):
+                        continue
+                    for item in device_events:
+                        if isinstance(item, dict):
+                            items.append(item)
+
+        return items
+
+    def feed_items(
+        self,
+        owner_id,
+        location_id,
+        from_date,
+        limit=200,
+        next_page=None,
+        asc=False,
+    ):
+        """Return Feed item dictionaries for one Feed metadata page.
+
+        This requests Feed metadata grouped by events, then flattens the
+        `groupByEvents` response into the raw Feed item dictionaries.
+
+        :param owner_id: Owner/user id for the Arlo location.
+        :type owner_id: str
+        :param location_id: Arlo location id.
+        :type location_id: str
+        :param from_date: Starting date in YYYYMMDD format.
+        :type from_date: str
+        :param limit: Maximum number of Feed metadata groups to request.
+        :type limit: int
+        :param next_page: Cursor from a previous response's `nextPage`.
+        :type next_page: str
+        :param asc: If `True`, request oldest-first ordering.
+        :type asc: bool
+        :return: Raw Feed item dictionaries for one page.
+        :rtype: list
+
+        Event Caption data, when present, is preserved under each item's
+        `harlem` field. This method does not update media library videos.
+        """
+        return self._feed_items_from_metadata(
+            self.feed_metadata(
+                owner_id,
+                location_id,
+                from_date,
+                limit=limit,
+                group_by="events",
+                next_page=next_page,
+                asc=asc,
+            )
+        )
 
     def inject_response(self, response):
         """Inject a test packet into the event stream.
