@@ -249,7 +249,7 @@ class ArloBackEnd(object):
             return 500, None
 
         try:
-            if "application/json" in r.headers["Content-Type"]:
+            if "application/json" in r.headers.get("Content-Type", ""):
                 body = r.json()
             else:
                 body = r.text
@@ -257,7 +257,7 @@ class ArloBackEnd(object):
         except Exception as e:
             self._arlo.warning("body-error={}".format(type(e).__name__))
             self._arlo.debug(f"request-text={r.text}")
-            return 500, None
+            return r.status_code if r.status_code != 200 else 500, None
 
         self.vdebug("request-end={}".format(r.status_code))
         if r.status_code != 200:
