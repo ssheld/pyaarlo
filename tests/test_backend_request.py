@@ -88,3 +88,17 @@ class TestRequestTuple(TestCase):
 
         self.assertEqual(code, 500)
         self.assertIsNone(body)
+
+    def test_http_success_text_body_is_not_treated_as_envelope(self):
+        backend = self._backend_with_response(
+            FakeResponse(
+                200,
+                headers={"Content-Type": "text/plain"},
+                text='{"meta": {"code": 200}, "data": {}}',
+            )
+        )
+
+        code, body = backend._request_tuple("/test", method="POST")
+
+        self.assertEqual(code, 500)
+        self.assertIsNone(body)

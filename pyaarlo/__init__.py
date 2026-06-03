@@ -826,7 +826,7 @@ class PyArlo(object):
         meta_error = meta.get("error") if isinstance(meta, dict) else None
         if not isinstance(meta_error, int):
             meta_error = None
-        if isinstance(meta, dict) and meta.get("code") != 200:
+        if isinstance(meta, dict) and "code" in meta and meta.get("code") != 200:
             raise FeedMetadataError(
                 "Arlo Feed metadata request failed",
                 http_status=http_status,

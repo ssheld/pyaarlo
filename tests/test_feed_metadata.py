@@ -100,6 +100,16 @@ class TestFeedMetadata(TestCase):
             ),
         )
 
+    def test_feed_metadata_returns_data_when_meta_has_no_code(self):
+        data = {"groupByEvents": {}}
+        backend = FakeBackend({"meta": {}, "data": data})
+        arlo = PyArlo.__new__(PyArlo)
+        arlo._be = backend
+
+        metadata = arlo.feed_metadata("owner-id", "location-id", "20260524")
+
+        self.assertIs(metadata, data)
+
     def test_feed_metadata_raises_for_http_failure(self):
         backend = FakeBackend(None, http_status=429)
         arlo = PyArlo.__new__(PyArlo)

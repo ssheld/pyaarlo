@@ -266,6 +266,9 @@ class ArloBackEnd(object):
         if raw:
             return 200, body
 
+        if not isinstance(body, dict):
+            return 500, None
+
         # New auth style and TFA helper
         if "meta" in body:
             if body["meta"]["code"] == 200:
@@ -1311,6 +1314,7 @@ class ArloBackEnd(object):
             )
 
     def post_with_status(self, path, params=None, headers=None, raw=False, timeout=None):
+        """Post and return ``(http_status, body)`` without event wait handling."""
         return self._request_tuple(
             path=path,
             method="POST",
