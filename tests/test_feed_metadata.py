@@ -110,6 +110,7 @@ class TestFeedMetadata(TestCase):
 
         self.assertEqual(ctx.exception.http_status, 429)
         self.assertIsNone(ctx.exception.meta_code)
+        self.assertIsNone(ctx.exception.response_type)
         self.assertIn("http_status=429", str(ctx.exception))
 
     def test_feed_metadata_raises_for_meta_error(self):
@@ -129,9 +130,11 @@ class TestFeedMetadata(TestCase):
             arlo.feed_metadata("owner-id", "location-id", "20260524")
 
         self.assertEqual(ctx.exception.http_status, 200)
+        self.assertEqual(ctx.exception.response_type, "dict")
+        self.assertEqual(ctx.exception.response_keys, ("meta",))
         self.assertEqual(ctx.exception.meta_code, 400)
         self.assertEqual(ctx.exception.meta_error, 9261)
-        self.assertEqual(ctx.exception.meta_message, "temporarily unavailable")
+        self.assertIn("response_keys=meta", str(ctx.exception))
 
     def test_feed_metadata_raises_for_no_usable_response(self):
         backend = FakeBackend("not-json")
@@ -142,6 +145,7 @@ class TestFeedMetadata(TestCase):
             arlo.feed_metadata("owner-id", "location-id", "20260524")
 
         self.assertEqual(ctx.exception.http_status, 200)
+        self.assertEqual(ctx.exception.response_type, "str")
         self.assertIsNone(ctx.exception.meta_code)
 
     def test_feed_metadata_raises_for_missing_data(self):
@@ -153,6 +157,8 @@ class TestFeedMetadata(TestCase):
             arlo.feed_metadata("owner-id", "location-id", "20260524")
 
         self.assertEqual(ctx.exception.http_status, 200)
+        self.assertEqual(ctx.exception.response_type, "dict")
+        self.assertEqual(ctx.exception.response_keys, ("meta",))
         self.assertEqual(ctx.exception.meta_code, 200)
 
     def test_feed_metadata_raises_for_non_dict_data(self):
@@ -164,6 +170,8 @@ class TestFeedMetadata(TestCase):
             arlo.feed_metadata("owner-id", "location-id", "20260524")
 
         self.assertEqual(ctx.exception.http_status, 200)
+        self.assertEqual(ctx.exception.response_type, "dict")
+        self.assertEqual(ctx.exception.response_keys, ("data", "meta"))
         self.assertEqual(ctx.exception.meta_code, 200)
 
     def test_feed_items_flattens_group_by_events(self):

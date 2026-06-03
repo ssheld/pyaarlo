@@ -63,24 +63,28 @@ class FeedMetadataError(Exception):
         self,
         message,
         http_status=None,
+        response_type=None,
+        response_keys=None,
         meta_code=None,
         meta_error=None,
-        meta_message=None,
     ):
         self.http_status = http_status
+        self.response_type = response_type
+        self.response_keys = response_keys
         self.meta_code = meta_code
         self.meta_error = meta_error
-        self.meta_message = meta_message
 
         details = []
         if http_status is not None:
             details.append("http_status={}".format(http_status))
+        if response_type is not None:
+            details.append("response_type={}".format(response_type))
+        if response_keys is not None:
+            details.append("response_keys={}".format(",".join(response_keys)))
         if meta_code is not None:
             details.append("meta_code={}".format(meta_code))
         if meta_error is not None:
             details.append("meta_error={}".format(meta_error))
-        if meta_message is not None:
-            details.append("meta_message={}".format(meta_message))
 
         if details:
             message = "{} ({})".format(message, ", ".join(details))
@@ -814,16 +818,22 @@ class PyArlo(object):
             raise FeedMetadataError(
                 "Arlo Feed metadata request returned no usable response",
                 http_status=http_status,
+                response_type=type(response).__name__,
             )
 
+        response_keys = tuple(sorted(str(key) for key in response.keys()))
         meta = response.get("meta")
+        meta_error = meta.get("error") if isinstance(meta, dict) else None
+        if not isinstance(meta_error, int):
+            meta_error = None
         if isinstance(meta, dict) and meta.get("code") != 200:
             raise FeedMetadataError(
                 "Arlo Feed metadata request failed",
                 http_status=http_status,
+                response_type="dict",
+                response_keys=response_keys,
                 meta_code=meta.get("code"),
-                meta_error=meta.get("error"),
-                meta_message=meta.get("message"),
+                meta_error=meta_error,
             )
 
         data = response.get("data")
@@ -832,7 +842,10 @@ class PyArlo(object):
             raise FeedMetadataError(
                 "Arlo Feed metadata response missing metadata data",
                 http_status=http_status,
+                response_type="dict",
+                response_keys=response_keys,
                 meta_code=meta_code,
+                meta_error=meta_error,
             )
 
         return data
