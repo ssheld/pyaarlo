@@ -1,4 +1,5 @@
 0.8.0.20
+  Add Feed metadata helpers and harden Feed metadata error diagnostics.
   Fix IMAP 2FA OTP extraction on Latin-1 / text-plain mail [thanks @paalkr]
   Support V3 custom modes and location-based alarm panel [thanks @GuiPoM]
   Fix stop() leaving ghost threads that block reconnection [thanks @Fernandosnulerin]
