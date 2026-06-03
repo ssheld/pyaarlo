@@ -56,6 +56,37 @@ _LOGGER = logging.getLogger("pyaarlo")
 __version__ = "0.8.0.20"
 
 
+class FeedMetadataError(Exception):
+    """Raised when an Arlo Feed metadata response cannot be used."""
+
+    def __init__(
+        self,
+        message,
+        http_status=None,
+        meta_code=None,
+        meta_error=None,
+        meta_message=None,
+    ):
+        self.http_status = http_status
+        self.meta_code = meta_code
+        self.meta_error = meta_error
+        self.meta_message = meta_message
+
+        details = []
+        if http_status is not None:
+            details.append("http_status={}".format(http_status))
+        if meta_code is not None:
+            details.append("meta_code={}".format(meta_code))
+        if meta_error is not None:
+            details.append("meta_error={}".format(meta_error))
+        if meta_message is not None:
+            details.append("meta_message={}".format(meta_message))
+
+        if details:
+            message = "{} ({})".format(message, ", ".join(details))
+        Exception.__init__(self, message)
+
+
 class PyArlo(object):
     """Entry point for all Arlo operations.
 
@@ -752,20 +783,59 @@ class PyArlo(object):
         :type asc: bool
         :return: Unwrapped Feed metadata response for one page.
         :rtype: dict
+        :raises FeedMetadataError: if Arlo returns a failed or unrecognized
+          Feed metadata response.
 
         Event Caption data, when present, is preserved in the raw response under
         the Feed item's `harlem` field.
         """
-        return self.be.post(
+        params = {
+            "asc": asc,
+            "fromDate": from_date,
+            "limit": limit,
+            "groupBy": group_by,
+        }
+        if next_page is not None:
+            params["nextPage"] = next_page
+
+        http_status, response = self.be.post_with_status(
             FEED_METADATA_PATH_FORMAT.format(owner_id, location_id),
-            {
-                "asc": asc,
-                "fromDate": from_date,
-                "limit": limit,
-                "groupBy": group_by,
-                "nextPage": next_page,
-            },
+            params,
+            raw=True,
         )
+
+        if http_status != 200:
+            raise FeedMetadataError(
+                "Arlo Feed metadata request failed",
+                http_status=http_status,
+            )
+
+        if not isinstance(response, dict):
+            raise FeedMetadataError(
+                "Arlo Feed metadata request returned no usable response",
+                http_status=http_status,
+            )
+
+        meta = response.get("meta")
+        if isinstance(meta, dict) and meta.get("code") != 200:
+            raise FeedMetadataError(
+                "Arlo Feed metadata request failed",
+                http_status=http_status,
+                meta_code=meta.get("code"),
+                meta_error=meta.get("error"),
+                meta_message=meta.get("message"),
+            )
+
+        data = response.get("data")
+        if not isinstance(data, dict):
+            meta_code = meta.get("code") if isinstance(meta, dict) else None
+            raise FeedMetadataError(
+                "Arlo Feed metadata response missing metadata data",
+                http_status=http_status,
+                meta_code=meta_code,
+            )
+
+        return data
 
     def _feed_items_from_metadata(self, metadata):
         """Return Feed item dictionaries from a Feed metadata response."""
@@ -820,6 +890,8 @@ class PyArlo(object):
         :type asc: bool
         :return: Raw Feed item dictionaries for one page.
         :rtype: list
+        :raises FeedMetadataError: if the Feed metadata request fails or
+          returns an unrecognized response.
 
         Event Caption data, when present, is preserved under each item's
         `harlem` field. This method does not update media library videos.

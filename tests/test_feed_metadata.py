@@ -1,22 +1,23 @@
 from inspect import signature
 from unittest import TestCase
 
-from pyaarlo import PyArlo
+from pyaarlo import FeedMetadataError, PyArlo
 
 
 class FakeBackend(object):
-    def __init__(self, response):
+    def __init__(self, response=None, http_status=200):
         self.response = response
+        self.http_status = http_status
         self.posts = []
 
-    def post(self, path, params):
-        self.posts.append((path, params))
-        return self.response
+    def post_with_status(self, path, params, raw=False):
+        self.posts.append((path, params, raw))
+        return self.http_status, self.response
 
 
 class TestFeedMetadata(TestCase):
-    def test_feed_metadata_posts_request_and_returns_response(self):
-        response = {
+    def test_feed_metadata_posts_request_and_returns_data(self):
+        data = {
             "groupByEvents": {
                 "event-key": [
                     {
@@ -45,7 +46,7 @@ class TestFeedMetadata(TestCase):
             },
             "nextPage": "next-page",
         }
-        backend = FakeBackend(response)
+        backend = FakeBackend({"meta": {"code": 200}, "data": data})
         arlo = PyArlo.__new__(PyArlo)
         arlo._be = backend
 
@@ -59,7 +60,7 @@ class TestFeedMetadata(TestCase):
             asc=True,
         )
 
-        self.assertIs(metadata, response)
+        self.assertIs(metadata, data)
         self.assertEqual(
             backend.posts,
             [
@@ -72,17 +73,19 @@ class TestFeedMetadata(TestCase):
                         "groupBy": "type",
                         "nextPage": "previous-page",
                     },
+                    True,
                 )
             ],
         )
 
     def test_feed_metadata_uses_feed_defaults(self):
-        backend = FakeBackend({})
+        backend = FakeBackend({"meta": {"code": 200}, "data": {}})
         arlo = PyArlo.__new__(PyArlo)
         arlo._be = backend
 
-        arlo.feed_metadata("owner-id", "location-id", "20260524")
+        metadata = arlo.feed_metadata("owner-id", "location-id", "20260524")
 
+        self.assertEqual(metadata, {})
         self.assertEqual(
             backend.posts[0],
             (
@@ -92,10 +95,76 @@ class TestFeedMetadata(TestCase):
                     "fromDate": "20260524",
                     "limit": 200,
                     "groupBy": "events",
-                    "nextPage": None,
                 },
+                True,
             ),
         )
+
+    def test_feed_metadata_raises_for_http_failure(self):
+        backend = FakeBackend(None, http_status=429)
+        arlo = PyArlo.__new__(PyArlo)
+        arlo._be = backend
+
+        with self.assertRaises(FeedMetadataError) as ctx:
+            arlo.feed_metadata("owner-id", "location-id", "20260524")
+
+        self.assertEqual(ctx.exception.http_status, 429)
+        self.assertIsNone(ctx.exception.meta_code)
+        self.assertIn("http_status=429", str(ctx.exception))
+
+    def test_feed_metadata_raises_for_meta_error(self):
+        backend = FakeBackend(
+            {
+                "meta": {
+                    "code": 400,
+                    "error": 9261,
+                    "message": "temporarily unavailable",
+                }
+            }
+        )
+        arlo = PyArlo.__new__(PyArlo)
+        arlo._be = backend
+
+        with self.assertRaises(FeedMetadataError) as ctx:
+            arlo.feed_metadata("owner-id", "location-id", "20260524")
+
+        self.assertEqual(ctx.exception.http_status, 200)
+        self.assertEqual(ctx.exception.meta_code, 400)
+        self.assertEqual(ctx.exception.meta_error, 9261)
+        self.assertEqual(ctx.exception.meta_message, "temporarily unavailable")
+
+    def test_feed_metadata_raises_for_no_usable_response(self):
+        backend = FakeBackend("not-json")
+        arlo = PyArlo.__new__(PyArlo)
+        arlo._be = backend
+
+        with self.assertRaises(FeedMetadataError) as ctx:
+            arlo.feed_metadata("owner-id", "location-id", "20260524")
+
+        self.assertEqual(ctx.exception.http_status, 200)
+        self.assertIsNone(ctx.exception.meta_code)
+
+    def test_feed_metadata_raises_for_missing_data(self):
+        backend = FakeBackend({"meta": {"code": 200}})
+        arlo = PyArlo.__new__(PyArlo)
+        arlo._be = backend
+
+        with self.assertRaises(FeedMetadataError) as ctx:
+            arlo.feed_metadata("owner-id", "location-id", "20260524")
+
+        self.assertEqual(ctx.exception.http_status, 200)
+        self.assertEqual(ctx.exception.meta_code, 200)
+
+    def test_feed_metadata_raises_for_non_dict_data(self):
+        backend = FakeBackend({"meta": {"code": 200}, "data": []})
+        arlo = PyArlo.__new__(PyArlo)
+        arlo._be = backend
+
+        with self.assertRaises(FeedMetadataError) as ctx:
+            arlo.feed_metadata("owner-id", "location-id", "20260524")
+
+        self.assertEqual(ctx.exception.http_status, 200)
+        self.assertEqual(ctx.exception.meta_code, 200)
 
     def test_feed_items_flattens_group_by_events(self):
         harlem = [
@@ -120,7 +189,7 @@ class TestFeedMetadata(TestCase):
             "name": "video-id-3",
             "deviceId": "device-id-3",
         }
-        response = {
+        data = {
             "groupByEvents": {
                 "event-key-1": [
                     {
@@ -136,7 +205,7 @@ class TestFeedMetadata(TestCase):
             },
             "nextPage": "next-page",
         }
-        backend = FakeBackend(response)
+        backend = FakeBackend({"meta": {"code": 200}, "data": data})
         arlo = PyArlo.__new__(PyArlo)
         arlo._be = backend
 
@@ -165,6 +234,7 @@ class TestFeedMetadata(TestCase):
                         "groupBy": "events",
                         "nextPage": "previous-page",
                     },
+                    True,
                 )
             ],
         )
@@ -172,13 +242,23 @@ class TestFeedMetadata(TestCase):
     def test_feed_items_always_requests_event_grouping(self):
         self.assertNotIn("group_by", signature(PyArlo.feed_items).parameters)
 
-        backend = FakeBackend({})
+        backend = FakeBackend({"meta": {"code": 200}, "data": {}})
         arlo = PyArlo.__new__(PyArlo)
         arlo._be = backend
 
         arlo.feed_items("owner-id", "location-id", "20260524")
 
         self.assertEqual(backend.posts[0][1]["groupBy"], "events")
+
+    def test_feed_items_propagates_metadata_errors(self):
+        backend = FakeBackend(None, http_status=500)
+        arlo = PyArlo.__new__(PyArlo)
+        arlo._be = backend
+
+        with self.assertRaises(FeedMetadataError) as ctx:
+            arlo.feed_items("owner-id", "location-id", "20260524")
+
+        self.assertEqual(ctx.exception.http_status, 500)
 
     def test_feed_items_returns_empty_list_for_unexpected_metadata(self):
         arlo = PyArlo.__new__(PyArlo)
