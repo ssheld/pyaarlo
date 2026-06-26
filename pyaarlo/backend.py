@@ -1324,6 +1324,18 @@ class ArloBackEnd(object):
                 self._request, path, "POST", params, headers, False, raw, timeout
             )
 
+    def post_with_status(self, path, params=None, headers=None, raw=False, timeout=None):
+        """Post and return ``(http_status, body)`` without event wait handling."""
+        return self._request_tuple(
+            path=path,
+            method="POST",
+            params=params,
+            headers=headers,
+            stream=False,
+            raw=raw,
+            timeout=timeout,
+        )
+
     def auth_post(self, path, params=None, headers=None, raw=False, timeout=None, cookies=None):
         return self._request_tuple(
             path, "POST", params, headers, False, raw, timeout, self._arlo.cfg.auth_host, authpost=True, cookies=cookies
